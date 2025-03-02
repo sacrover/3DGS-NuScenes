@@ -29,7 +29,7 @@ python process_nuscenes_colmap.py --scene_idx 1 --samples_per_scene 1 --set_size
 - `--set_size`: Number of frames per set (use `<1` to process the entire sequence as a single set)  
 - `--use_lidar`: Flag to enable LiDAR data processing  
 
-This will create a directory in `data/colmap_data/<scene-idx>`. 
+This will create a directory in `data/colmap_data/<scene-idx>`. For each image, a corresponding depth map will be created in the `/depth` directory.  
 
 **Note: Run the batch file for every sample `data/colmap_data/<scene-idx>/sample-<idx>/batch.bat` to generate the sparse data required for 3DGS.** 
 
