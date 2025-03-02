@@ -64,18 +64,77 @@ def visualise_3d_pcl(pcl_path, annotated_labels):
 
     o3d.visualization.draw_geometries([pcd])
 
+def dense_depth_map(depth_map_sparse, n, m, grid):
+    """
+    https://  github.com/balcilar/DenseDepthMap
+    """
+    ng = 2 * grid + 1
+    epsilon = 1e-6  # Small value to prevent division by zero
+
+    # Find the non-zero elements in the sparse depth map
+    non_zero_indices = np.nonzero(depth_map_sparse)
+    print("non_zero_indices shape", non_zero_indices[0])
+    Pts = np.vstack((non_zero_indices[1], non_zero_indices[0], depth_map_sparse[non_zero_indices])).T
+    print("Pts shape",  Pts.shape)
+    print("Pts", Pts)
+    # Convert sparse points to indices
+    linear_index = np.ravel_multi_index(
+        (Pts[:, 1].astype(int), Pts[:, 0].astype(int)), (n, m)
+    )
+    print("linear_index shape", linear_index.shape)
+    # Initialize matrices
+    mX = np.full((n, m), np.inf)
+    mY = np.full((n, m), np.inf)
+    mD = np.zeros((n, m))
+
+    # Populate matrices with point data
+    mX.flat[linear_index] = Pts[:, 0] - np.floor(Pts[:, 0])
+    mY.flat[linear_index] = Pts[:, 1] - np.floor(Pts[:, 1])
+    mD.flat[linear_index] = Pts[:, 2]
+
+    print("mx flat shape", mX.flat)
+
+    # Prepare for grid-based interpolation
+    KmX, KmY, KmD = [], [], []
+    for i in range(ng):
+        for j in range(ng):
+            KmX.append(mX[i : n - ng + i + 1, j : m - ng + j + 1] - grid - 1 + i)
+            KmY.append(mY[i : n - ng + i + 1, j : m - ng + j + 1] - grid - 1 + j)
+            KmD.append(mD[i : n - ng + i + 1, j : m - ng + j + 1])
+
+    # Perform weighted interpolation
+    S = np.zeros_like(KmD[0])
+    Y = np.zeros_like(KmD[0])
+    for i in range(ng):
+        for j in range(ng):
+            s = 1.0 / (np.sqrt(KmX[i * ng + j] ** 2 + KmY[i * ng + j] ** 2) + epsilon)
+            Y += s * KmD[i * ng + j]
+            S += s
+
+    S[S == 0] = 1  # Avoid division by zero
+    out = np.zeros((n, m))
+    out[grid : n - grid, grid : m - grid] = Y / S
+
+    # Replace NaN and inf values with 0
+    out = np.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
+
+    return out
+
 
 def plot_depth_map(width, height, filtered_points, filtered_depths, plot=False, ax=None, fig=None, save_path=None):
     # Depth map (sparse)
+    # sparse = np.hstack((filtered_points, filtered_depths.reshape(-1, 1)))
     depth_map_sparse = np.zeros((height, width))
     depth_map_sparse[filtered_points[:, 1].astype(np.uint16), filtered_points[:, 0].astype(np.uint16)] = filtered_depths
 
+
     # Interpolate depth map (dense)
-    min_depth, max_depth = 1.0, 100.0
-    x, y = np.meshgrid(np.linspace(0, width - 1, num=width), np.linspace(0, height - 1, num=height))
-    depth_map_dense = griddata(filtered_points[:, :2], filtered_depths, (x, y), method='linear', fill_value=0)
+
+    # depth_map_dense = dense_depth_map(depth_map_sparse, height, width, grid=7)
+    depth_map_dense = depth_map_sparse
 
     # Normalize interpolated depth map
+    min_depth, max_depth = 1.0, 100.0
     depth_map_dense = (depth_map_dense - min_depth) / (max_depth - min_depth)
     depth_map_dense = np.clip(depth_map_dense, 0, 1)
 
@@ -85,12 +144,15 @@ def plot_depth_map(width, height, filtered_points, filtered_depths, plot=False, 
     # for i in range(width):
     #     mask[ind[i]:, i] = 1
 
-    kernel = np.ones((9, 3), np.uint8)
+    # kernel = np.ones((3, 3), np.uint8)
+
+    kernel = np.array([[0.25, 0.25, 0.25], [0.25, 1, 0.25], [0.25, 0.25, 0.25]])
 
     dilate_dense_map = cv2.dilate(depth_map_dense, kernel, iterations=4)  # Dilation
 
     # Mask the depth map
     masked_depth_map = (mask * 255 * dilate_dense_map).astype(np.uint8)
+    # masked_depth_map = (mask * 255 * depth_map_dense).astype(np.uint8)
 
     # Plot the depth map
     if plot:
@@ -100,8 +162,9 @@ def plot_depth_map(width, height, filtered_points, filtered_depths, plot=False, 
         cbar.ax.set_ylabel(r"Normalized Depth", labelpad=20, rotation=270)
         ax.set_axis_off()
 
+
     if save_path is not None:
-        plt.imsave(save_path, masked_depth_map, cmap='viridis')
+        plt.imsave(save_path, masked_depth_map, cmap='gray')
 
 
 def plot_3d_scatter(data, labels):

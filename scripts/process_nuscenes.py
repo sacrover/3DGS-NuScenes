@@ -23,10 +23,9 @@ from scripts.utils import convert_to_int
 
 from scripts.metrics import compute_iou, mse
 
-
-def project_pointcloud_nuscenes_default(nusc, pcl_path, cam_data, lidar_data):
+def project_pointcloud_global_frame(nusc, pcl_path, lidar_data):
     """
-    TODO: Description
+    Transforms the point cloud from the sensor frame to the global frame
     """
     pc = LidarPointCloud.from_file(pcl_path)
 
@@ -44,6 +43,15 @@ def project_pointcloud_nuscenes_default(nusc, pcl_path, cam_data, lidar_data):
     
     pc.transform(inverse_homegenous_transform(T_sv @ T_vg))
 
+    return pc
+
+
+def project_pointcloud_nuscenes_default(nusc, pcl_path, cam_data, lidar_data):
+    """
+    TODO: Description
+    """
+
+    pc = project_pointcloud_global_frame(nusc, pcl_path, lidar_data)
     # transform from global to ego vehicle frame (based on camera timestamp) 
     cs_record = nusc.get('calibrated_sensor', cam_data['calibrated_sensor_token'])
     T_sv = transform_matrix(translation=cs_record['translation'],
@@ -332,6 +340,7 @@ def img_lidar_depth_map(nusc, sample, cameras, plot_img=False, save_paths=None):
 
     if plot_img:
         plt.show()
+
 
 def compute_depth_mse(scene_idxs, root_dirs=None):
     for scene_idx in scene_idxs:
